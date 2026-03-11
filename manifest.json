@@ -1,0 +1,9 @@
+{
+    "display_name": "Outfit State Tracker",
+    "version": "1.0.0",
+    "description": "Tracks character outfit changes via [OUTFIT_CHANGE:] tags and injects current state into context",
+    "js": "index.js",
+    "author": "custom",
+    "homePage": "",
+    "tags": ["roleplay", "image-generation"]
+}
