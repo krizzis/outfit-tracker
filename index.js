@@ -141,7 +141,44 @@
         return text.replace(/\s*\[OUTFIT_CHANGE:[^\]]*\]/gi, '').trim();
     }
 
-    function onMessageReceived(messageId) {
+    // Тихий анализ одежды через LLM
+    async function analyzeOutfit(messageText, currentOutfit) {
+        const prevOutfit = currentOutfit || 'unknown';
+        try {
+            const response = await fetch('http://localhost:1234/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'local-model',
+                    max_tokens: 60,
+                    temperature: 0.1,
+                    messages: [{
+                        role: 'user',
+                        content: 'Analyze this roleplay message and determine if the character\'s clothing changed.\n\nCurrent outfit: ' + prevOutfit + '\n\nMessage: ' + messageText + '\n\nRespond ONLY with valid JSON, no explanation:\n{"changed": false} if clothing did not change\n{"changed": true, "outfit": "tag1, tag2, tag3"} if clothing changed\n\nFor outfit tags use danbooru style. List ONLY what is currently worn RIGHT NOW.\nIf topless → include "topless". If nude → include "nude". Do not list removed items.'
+                    }]
+                })
+            });
+
+            const data = await response.json();
+            const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+            if (!content) return null;
+
+            const clean = content.trim().replace(/```json|```/g, '').trim();
+            const parsed = JSON.parse(clean);
+
+            if (parsed.changed && parsed.outfit) {
+                console.log('[OutfitTracker] Analysis: outfit changed → ' + parsed.outfit);
+                return parsed.outfit;
+            }
+            console.log('[OutfitTracker] Analysis: no change');
+            return null;
+        } catch (e) {
+            console.warn('[OutfitTracker] Analysis failed:', e);
+            return null;
+        }
+    }
+
+    async function onMessageReceived(messageId) {
         const settings = getSettings();
         if (!settings.enabled) return;
 
@@ -151,10 +188,18 @@
         const message = c.chat[messageId];
         if (!message || message.is_user) return;
 
-        const outfit = parseOutfitTag(message.mes);
-        if (outfit) {
+        // Старый путь — тег в сообщении (fallback)
+        const tagOutfit = parseOutfitTag(message.mes);
+        if (tagOutfit) {
             message.mes = stripOutfitTag(message.mes);
-            saveOutfitState(outfit);
+            await saveOutfitState(tagOutfit);
+            return;
+        }
+
+        // Новый путь — тихий анализ
+        const analyzed = await analyzeOutfit(message.mes, settings.current_outfit);
+        if (analyzed) {
+            await saveOutfitState(analyzed);
         }
     }
 
