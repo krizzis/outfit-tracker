@@ -1,11 +1,7 @@
-// Outfit State Tracker — SillyTavern Extension v1.2
-// Ждёт APP_READY событие ST вместо polling
+// Outfit State Tracker — SillyTavern Extension v1.3
+// Использует jQuery ready + ST globals
 
-(function () {
-    'use strict';
-
-    // Защита от повторной инициализации
-    if (window.__outfitTrackerLoaded) return;
+if (typeof window.__outfitTrackerLoaded === 'undefined') {
     window.__outfitTrackerLoaded = true;
 
     const EXT_NAME = 'outfit-tracker';
@@ -22,29 +18,31 @@
     function getSettings() {
         if (!window.extension_settings) window.extension_settings = {};
         if (!window.extension_settings[EXT_NAME]) {
-            window.extension_settings[EXT_NAME] = { ...defaultSettings };
+            window.extension_settings[EXT_NAME] = Object.assign({}, defaultSettings);
         }
         return window.extension_settings[EXT_NAME];
     }
 
     function saveSettings() {
-        if (window.saveSettingsDebounced) window.saveSettingsDebounced();
+        if (typeof window.saveSettingsDebounced === 'function') {
+            window.saveSettingsDebounced();
+        }
     }
 
     function injectOutfitPrompt() {
         const settings = getSettings();
-        if (!window.setExtensionPrompt) return;
+        if (typeof window.setExtensionPrompt !== 'function') return;
 
         if (!settings.enabled || !settings.current_outfit) {
             window.setExtensionPrompt(PROMPT_KEY, '', settings.inject_position, 0);
             return;
         }
 
-        const prompt = `[Character's current outfit: ${settings.current_outfit}]`;
+        const prompt = "[Character's current outfit: " + settings.current_outfit + "]";
         window.setExtensionPrompt(PROMPT_KEY, prompt, settings.inject_position, 0);
 
         if (settings.debug) {
-            console.log(`[OutfitTracker] Injected: ${prompt}`);
+            console.log('[OutfitTracker] Injected: ' + prompt);
         }
     }
 
@@ -54,10 +52,9 @@
         saveSettings();
         updateStatusBadge();
         injectOutfitPrompt();
-
-        console.log(`[OutfitTracker] Outfit saved: ${outfit}`);
+        console.log('[OutfitTracker] Outfit saved: ' + outfit);
         if (settings.debug && window.toastr) {
-            window.toastr.success(`Outfit updated: ${outfit}`, 'Outfit Tracker', { timeOut: 3000 });
+            window.toastr.success('Outfit updated: ' + outfit, 'Outfit Tracker', { timeOut: 3000 });
         }
     }
 
@@ -66,25 +63,25 @@
         const badge = document.getElementById('outfit_tracker_badge');
         if (!badge) return;
         if (settings.current_outfit) {
-            const short = settings.current_outfit.length > 45
+            const text = settings.current_outfit.length > 45
                 ? settings.current_outfit.substring(0, 45) + '...'
                 : settings.current_outfit;
-            badge.textContent = 'OK ' + short;
+            badge.textContent = '[OK] ' + text;
             badge.style.color = '#4ade80';
         } else {
-            badge.textContent = '- not set';
+            badge.textContent = 'not set';
             badge.style.color = '#94a3b8';
         }
     }
 
     function updateUI() {
         const settings = getSettings();
-        const enabledEl = document.getElementById('outfit_tracker_enabled');
-        const currentEl = document.getElementById('outfit_tracker_current');
-        const debugEl = document.getElementById('outfit_tracker_debug');
-        if (enabledEl) enabledEl.checked = settings.enabled;
-        if (currentEl) currentEl.value = settings.current_outfit || '';
-        if (debugEl) debugEl.checked = settings.debug || false;
+        const en = document.getElementById('outfit_tracker_enabled');
+        const cur = document.getElementById('outfit_tracker_current');
+        const dbg = document.getElementById('outfit_tracker_debug');
+        if (en) en.checked = !!settings.enabled;
+        if (cur) cur.value = settings.current_outfit || '';
+        if (dbg) dbg.checked = !!settings.debug;
         updateStatusBadge();
     }
 
@@ -101,17 +98,19 @@
         const settings = getSettings();
         if (!settings.enabled) return;
 
-        const context = window.SillyTavern ? window.SillyTavern.getContext() : null;
-        if (!context || !context.chat) return;
+        let chat = null;
+        if (window.SillyTavern && typeof window.SillyTavern.getContext === 'function') {
+            const ctx = window.SillyTavern.getContext();
+            chat = ctx && ctx.chat;
+        }
+        if (!chat) return;
 
-        const message = context.chat[messageId];
+        const message = chat[messageId];
         if (!message || message.is_user) return;
 
-        const rawText = message.mes;
-        const outfit = parseOutfitTag(rawText);
-
+        const outfit = parseOutfitTag(message.mes);
         if (outfit) {
-            message.mes = stripOutfitTag(rawText);
+            message.mes = stripOutfitTag(message.mes);
             saveOutfitState(outfit);
         }
     }
@@ -123,36 +122,35 @@
 
         const panel = document.createElement('div');
         panel.id = 'outfit_tracker_panel';
-        panel.innerHTML = [
-            '<div class="inline-drawer">',
-            '  <div class="inline-drawer-toggle inline-drawer-header">',
-            '    <b>Outfit State Tracker</b>',
-            '    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>',
-            '  </div>',
-            '  <div class="inline-drawer-content" style="padding:10px 0;">',
-            '    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">',
-            '      <input type="checkbox" id="outfit_tracker_enabled"/>',
-            '      <label for="outfit_tracker_enabled" style="color:#e2e8f0;">Enabled</label>',
-            '    </div>',
-            '    <div style="margin-bottom:8px;">',
-            '      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Current outfit:</div>',
-            '      <span id="outfit_tracker_badge" style="font-size:11px;"></span>',
-            '    </div>',
-            '    <div style="margin-bottom:8px;">',
-            '      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Override / set manually:</div>',
-            '      <input type="text" id="outfit_tracker_current" placeholder="e.g. red dress, heels" style="width:100%;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:5px 8px;font-size:12px;"/>',
-            '    </div>',
-            '    <div style="display:flex;gap:8px;margin-bottom:10px;">',
-            '      <button id="outfit_tracker_save_btn" class="menu_button">Save</button>',
-            '      <button id="outfit_tracker_clear_btn" class="menu_button">Clear</button>',
-            '    </div>',
-            '    <div style="display:flex;align-items:center;gap:8px;">',
-            '      <input type="checkbox" id="outfit_tracker_debug"/>',
-            '      <label for="outfit_tracker_debug" style="font-size:11px;color:#94a3b8;">Debug toasts</label>',
-            '    </div>',
-            '  </div>',
-            '</div>'
-        ].join('');
+        panel.innerHTML =
+            '<div class="inline-drawer">' +
+            '<div class="inline-drawer-toggle inline-drawer-header">' +
+            '<b>Outfit State Tracker</b>' +
+            '<div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>' +
+            '</div>' +
+            '<div class="inline-drawer-content" style="padding:10px 0;">' +
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">' +
+            '<input type="checkbox" id="outfit_tracker_enabled"/>' +
+            '<label for="outfit_tracker_enabled">Enabled</label>' +
+            '</div>' +
+            '<div style="margin-bottom:8px;">' +
+            '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Current outfit:</div>' +
+            '<span id="outfit_tracker_badge" style="font-size:11px;"></span>' +
+            '</div>' +
+            '<div style="margin-bottom:8px;">' +
+            '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Set manually:</div>' +
+            '<input type="text" id="outfit_tracker_current" placeholder="red dress, heels, no jacket"' +
+            ' style="width:100%;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:5px 8px;font-size:12px;"/>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
+            '<button id="outfit_tracker_save_btn" class="menu_button">Save</button>' +
+            '<button id="outfit_tracker_clear_btn" class="menu_button">Clear</button>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<input type="checkbox" id="outfit_tracker_debug"/>' +
+            '<label for="outfit_tracker_debug" style="font-size:11px;color:#94a3b8;">Debug toasts</label>' +
+            '</div>' +
+            '</div></div>';
 
         container.appendChild(panel);
 
@@ -163,16 +161,18 @@
         });
 
         document.getElementById('outfit_tracker_save_btn').addEventListener('click', function () {
-            var val = document.getElementById('outfit_tracker_current').value.trim();
+            const val = document.getElementById('outfit_tracker_current').value.trim();
             if (val) saveOutfitState(val);
         });
 
         document.getElementById('outfit_tracker_clear_btn').addEventListener('click', function () {
-            var settings = getSettings();
-            settings.current_outfit = '';
+            const s = getSettings();
+            s.current_outfit = '';
             document.getElementById('outfit_tracker_current').value = '';
             saveSettings();
-            if (window.setExtensionPrompt) window.setExtensionPrompt(PROMPT_KEY, '', settings.inject_position, 0);
+            if (typeof window.setExtensionPrompt === 'function') {
+                window.setExtensionPrompt(PROMPT_KEY, '', s.inject_position, 0);
+            }
             updateStatusBadge();
         });
 
@@ -182,36 +182,26 @@
         });
 
         updateUI();
+        console.log('[OutfitTracker] Panel rendered');
     }
 
-    function attachEvents() {
-        window.eventSource.on(window.event_types.MESSAGE_RECEIVED, onMessageReceived);
-        window.eventSource.on(window.event_types.CHAT_LOADED, injectOutfitPrompt);
-        window.eventSource.on(window.event_types.CHAT_CHANGED, injectOutfitPrompt);
-        console.log('[OutfitTracker] Ready');
+    // Подписка на события ST через jQuery
+    function attachSTEvents() {
+        // ST триггерит кастомные jQuery события на document
+        $(document).on('MESSAGE_RECEIVED', function (e, messageId) {
+            onMessageReceived(messageId);
+        });
+        $(document).on('CHAT_LOADED CHAT_CHANGED', function () {
+            injectOutfitPrompt();
+        });
+        console.log('[OutfitTracker] jQuery events attached');
     }
 
-    function init() {
-        console.log('[OutfitTracker] Initializing...');
+    $(document).ready(function () {
+        console.log('[OutfitTracker] DOM ready, initializing...');
         renderPanel();
+        attachSTEvents();
         injectOutfitPrompt();
-        attachEvents();
-    }
-
-    // Ждём пока ST полностью загрузится
-    var elapsed = 0;
-    var maxWait = 15000;
-    var interval = 500;
-
-    var timer = setInterval(function () {
-        elapsed += interval;
-        if (window.eventSource && window.event_types) {
-            clearInterval(timer);
-            init();
-        } else if (elapsed >= maxWait) {
-            clearInterval(timer);
-            console.error('[OutfitTracker] Timeout: ST eventSource not found after 15s');
-        }
-    }, interval);
-
-})();
+        console.log('[OutfitTracker] Ready');
+    });
+}
