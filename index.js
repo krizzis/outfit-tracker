@@ -114,6 +114,8 @@
     }
 
     function renderPanel() {
+        // Не рендерить повторно если панель уже есть
+        if (document.getElementById('outfit_tracker_panel')) return;
         const container = document.getElementById('extensions_settings');
         if (!container) return;
 
@@ -189,25 +191,25 @@
         updateUI();
     }
 
+    let initialized = false;
+
     function init() {
+        if (initialized) return;
         console.log('[OutfitTracker] Initializing...');
 
         renderPanel();
         injectOutfitPrompt();
 
-        // Подписка на события через eventSource
         if (window.eventSource && window.event_types) {
             window.eventSource.on(window.event_types.MESSAGE_RECEIVED, onMessageReceived);
             window.eventSource.on(window.event_types.CHAT_LOADED, injectOutfitPrompt);
             window.eventSource.on(window.event_types.CHAT_CHANGED, injectOutfitPrompt);
-            console.log('[OutfitTracker] Event listeners attached');
+            initialized = true;
+            console.log('[OutfitTracker] Ready');
         } else {
-            console.warn('[OutfitTracker] eventSource not available, retrying in 2s...');
+            console.warn('[OutfitTracker] eventSource not available, retrying...');
             setTimeout(init, 2000);
-            return;
         }
-
-        console.log('[OutfitTracker] Ready');
     }
 
     // Запуск после загрузки DOM
