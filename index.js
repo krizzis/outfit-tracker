@@ -200,6 +200,8 @@
         }
 
         c.eventSource.on(c.event_types.MESSAGE_RECEIVED, onMessageReceived);
+        c.eventSource.on(c.event_types.MESSAGE_EDITED, onMessageReceived);
+        c.eventSource.on(c.event_types.MESSAGE_UPDATED, onMessageReceived);
         c.eventSource.on(c.event_types.CHAT_LOADED, injectOutfitPrompt);
         c.eventSource.on(c.event_types.CHAT_CHANGED, injectOutfitPrompt);
 
