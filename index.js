@@ -188,6 +188,47 @@
         console.log('[OutfitTracker] Panel rendered');
     }
 
+    // Маппинг стейта одежды в nudity теги
+    function getNudityTags(outfit) {
+        const tags = [];
+        const o = outfit.toLowerCase();
+
+        const isTopless = /no shirt|no top|topless|bare chest|shirtless|no bra/.test(o);
+        const isBottomless = /no panties|no underwear|bottomless|no shorts|no skirt|no pants/.test(o);
+        const isNude = /^nude$|^naked$|no clothes|nothing/.test(o);
+
+        if (isNude) {
+            tags.push('nude');
+        } else {
+            if (isTopless) tags.push('topless');
+            if (isBottomless) tags.push('bottomless');
+        }
+        return tags;
+    }
+
+    // Перехват SD промпта и добавление nudity тегов
+    function onSdPromptProcessing(promptObject) {
+        const settings = getSettings();
+        if (!settings.enabled || !settings.current_outfit) return;
+
+        const nudityTags = getNudityTags(settings.current_outfit);
+        if (nudityTags.length === 0) return;
+
+        // promptObject.prompt — строка с тегами
+        if (typeof promptObject.prompt !== 'string') return;
+
+        const existing = promptObject.prompt.toLowerCase();
+        const toAdd = nudityTags.filter(tag => !existing.includes(tag));
+        if (toAdd.length === 0) return;
+
+        promptObject.prompt = promptObject.prompt + ', ' + toAdd.join(', ');
+
+        if (settings.debug) {
+            console.log('[OutfitTracker] Added nudity tags: ' + toAdd.join(', '));
+        }
+    }
+
+
     function init() {
         console.log('[OutfitTracker] Initializing...');
         renderPanel();
@@ -204,6 +245,7 @@
         c.eventSource.on(c.event_types.MESSAGE_UPDATED, onMessageReceived);
         c.eventSource.on(c.event_types.CHAT_LOADED, injectOutfitPrompt);
         c.eventSource.on(c.event_types.CHAT_CHANGED, injectOutfitPrompt);
+        c.eventSource.on(c.event_types.SD_PROMPT_PROCESSING, onSdPromptProcessing);
 
         // Восстанавливаем UI после загрузки настроек расширений
         c.eventSource.on(c.event_types.EXTENSION_SETTINGS_LOADED, function () {
