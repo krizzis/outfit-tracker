@@ -1,7 +1,8 @@
-// Outfit State Tracker — SillyTavern Extension v1.3
-// Использует jQuery ready + ST globals
+// Outfit State Tracker — SillyTavern Extension v1.4
+// Использует window.SillyTavern.getContext() для доступа к eventSource и API
 
-if (typeof window.__outfitTrackerLoaded === 'undefined') {
+(function () {
+    if (window.__outfitTrackerLoaded) return;
     window.__outfitTrackerLoaded = true;
 
     const EXT_NAME = 'outfit-tracker';
@@ -15,31 +16,34 @@ if (typeof window.__outfitTrackerLoaded === 'undefined') {
         debug: false,
     };
 
+    function ctx() {
+        return window.SillyTavern.getContext();
+    }
+
     function getSettings() {
-        if (!window.extension_settings) window.extension_settings = {};
-        if (!window.extension_settings[EXT_NAME]) {
-            window.extension_settings[EXT_NAME] = Object.assign({}, defaultSettings);
+        const c = ctx();
+        if (!c.extension_settings[EXT_NAME]) {
+            c.extension_settings[EXT_NAME] = Object.assign({}, defaultSettings);
         }
-        return window.extension_settings[EXT_NAME];
+        return c.extension_settings[EXT_NAME];
     }
 
     function saveSettings() {
-        if (typeof window.saveSettingsDebounced === 'function') {
-            window.saveSettingsDebounced();
-        }
+        ctx().saveSettingsDebounced();
     }
 
     function injectOutfitPrompt() {
         const settings = getSettings();
-        if (typeof window.setExtensionPrompt !== 'function') return;
+        const c = ctx();
+        if (typeof c.setExtensionPrompt !== 'function') return;
 
         if (!settings.enabled || !settings.current_outfit) {
-            window.setExtensionPrompt(PROMPT_KEY, '', settings.inject_position, 0);
+            c.setExtensionPrompt(PROMPT_KEY, '', settings.inject_position, 0);
             return;
         }
 
         const prompt = "[Character's current outfit: " + settings.current_outfit + "]";
-        window.setExtensionPrompt(PROMPT_KEY, prompt, settings.inject_position, 0);
+        c.setExtensionPrompt(PROMPT_KEY, prompt, settings.inject_position, 0);
 
         if (settings.debug) {
             console.log('[OutfitTracker] Injected: ' + prompt);
@@ -98,14 +102,10 @@ if (typeof window.__outfitTrackerLoaded === 'undefined') {
         const settings = getSettings();
         if (!settings.enabled) return;
 
-        let chat = null;
-        if (window.SillyTavern && typeof window.SillyTavern.getContext === 'function') {
-            const ctx = window.SillyTavern.getContext();
-            chat = ctx && ctx.chat;
-        }
-        if (!chat) return;
+        const c = ctx();
+        if (!c.chat) return;
 
-        const message = chat[messageId];
+        const message = c.chat[messageId];
         if (!message || message.is_user) return;
 
         const outfit = parseOutfitTag(message.mes);
@@ -170,9 +170,7 @@ if (typeof window.__outfitTrackerLoaded === 'undefined') {
             s.current_outfit = '';
             document.getElementById('outfit_tracker_current').value = '';
             saveSettings();
-            if (typeof window.setExtensionPrompt === 'function') {
-                window.setExtensionPrompt(PROMPT_KEY, '', s.inject_position, 0);
-            }
+            ctx().setExtensionPrompt(PROMPT_KEY, '', s.inject_position, 0);
             updateStatusBadge();
         });
 
@@ -185,23 +183,30 @@ if (typeof window.__outfitTrackerLoaded === 'undefined') {
         console.log('[OutfitTracker] Panel rendered');
     }
 
-    // Подписка на события ST через jQuery
-    function attachSTEvents() {
-        // ST триггерит кастомные jQuery события на document
-        $(document).on('MESSAGE_RECEIVED', function (e, messageId) {
-            onMessageReceived(messageId);
-        });
-        $(document).on('CHAT_LOADED CHAT_CHANGED', function () {
-            injectOutfitPrompt();
-        });
-        console.log('[OutfitTracker] jQuery events attached');
+    function init() {
+        console.log('[OutfitTracker] Initializing...');
+        renderPanel();
+        injectOutfitPrompt();
+
+        const c = ctx();
+        const eventSource = c.eventSource;
+        const event_types = c.event_types;
+
+        if (!eventSource || !event_types) {
+            console.error('[OutfitTracker] eventSource not found in context');
+            return;
+        }
+
+        eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
+        eventSource.on(event_types.CHAT_LOADED, injectOutfitPrompt);
+        eventSource.on(event_types.CHAT_CHANGED, injectOutfitPrompt);
+
+        console.log('[OutfitTracker] Ready');
     }
 
+    // ST гарантированно готов когда jQuery fires document.ready
     $(document).ready(function () {
-        console.log('[OutfitTracker] DOM ready, initializing...');
-        renderPanel();
-        attachSTEvents();
-        injectOutfitPrompt();
-        console.log('[OutfitTracker] Ready');
+        init();
     });
-}
+
+})();
