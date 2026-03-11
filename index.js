@@ -205,8 +205,8 @@
         c.eventSource.on(c.event_types.CHAT_LOADED, injectOutfitPrompt);
         c.eventSource.on(c.event_types.CHAT_CHANGED, injectOutfitPrompt);
 
-        // Восстанавливаем UI когда ST загружает настройки
-        c.eventSource.on(c.event_types.SETTINGS_LOADED, function () {
+        // Восстанавливаем UI после загрузки настроек расширений
+        c.eventSource.on(c.event_types.EXTENSION_SETTINGS_LOADED, function () {
             updateUI();
             injectOutfitPrompt();
         });
