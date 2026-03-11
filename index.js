@@ -1,5 +1,4 @@
-// Outfit State Tracker — SillyTavern Extension v1.4
-// Использует window.SillyTavern.getContext() для доступа к eventSource и API
+// Outfit State Tracker — SillyTavern Extension v1.5
 
 (function () {
     if (window.__outfitTrackerLoaded) return;
@@ -16,38 +15,44 @@
         debug: false,
     };
 
-    function ctx() {
-        return window.SillyTavern.getContext();
-    }
-
+    // extension_settings доступен глобально через window, не через ctx()
     function getSettings() {
-        const c = ctx();
-        if (!c.extension_settings[EXT_NAME]) {
-            c.extension_settings[EXT_NAME] = Object.assign({}, defaultSettings);
+        if (!window.extension_settings) window.extension_settings = {};
+        if (!window.extension_settings[EXT_NAME]) {
+            window.extension_settings[EXT_NAME] = Object.assign({}, defaultSettings);
         }
-        return c.extension_settings[EXT_NAME];
+        return window.extension_settings[EXT_NAME];
     }
 
     function saveSettings() {
-        ctx().saveSettingsDebounced();
+        if (typeof window.saveSettingsDebounced === 'function') {
+            window.saveSettingsDebounced();
+        } else {
+            const c = window.SillyTavern.getContext();
+            if (c && typeof c.saveSettingsDebounced === 'function') c.saveSettingsDebounced();
+        }
     }
 
     function injectOutfitPrompt() {
         const settings = getSettings();
-        const c = ctx();
-        if (typeof c.setExtensionPrompt !== 'function') return;
+
+        // setExtensionPrompt — ищем везде
+        let setPrompt = window.setExtensionPrompt;
+        if (!setPrompt) {
+            const c = window.SillyTavern.getContext();
+            setPrompt = c && c.setExtensionPrompt;
+        }
+        if (typeof setPrompt !== 'function') return;
 
         if (!settings.enabled || !settings.current_outfit) {
-            c.setExtensionPrompt(PROMPT_KEY, '', settings.inject_position, 0);
+            setPrompt(PROMPT_KEY, '', settings.inject_position, 0);
             return;
         }
 
         const prompt = "[Character's current outfit: " + settings.current_outfit + "]";
-        c.setExtensionPrompt(PROMPT_KEY, prompt, settings.inject_position, 0);
+        setPrompt(PROMPT_KEY, prompt, settings.inject_position, 0);
 
-        if (settings.debug) {
-            console.log('[OutfitTracker] Injected: ' + prompt);
-        }
+        if (settings.debug) console.log('[OutfitTracker] Injected: ' + prompt);
     }
 
     function saveOutfitState(outfit) {
@@ -102,8 +107,8 @@
         const settings = getSettings();
         if (!settings.enabled) return;
 
-        const c = ctx();
-        if (!c.chat) return;
+        const c = window.SillyTavern.getContext();
+        if (!c || !c.chat) return;
 
         const message = c.chat[messageId];
         if (!message || message.is_user) return;
@@ -170,7 +175,7 @@
             s.current_outfit = '';
             document.getElementById('outfit_tracker_current').value = '';
             saveSettings();
-            ctx().setExtensionPrompt(PROMPT_KEY, '', s.inject_position, 0);
+            injectOutfitPrompt();
             updateStatusBadge();
         });
 
@@ -188,23 +193,25 @@
         renderPanel();
         injectOutfitPrompt();
 
-        const c = ctx();
-        const eventSource = c.eventSource;
-        const event_types = c.event_types;
-
-        if (!eventSource || !event_types) {
+        const c = window.SillyTavern.getContext();
+        if (!c || !c.eventSource || !c.event_types) {
             console.error('[OutfitTracker] eventSource not found in context');
             return;
         }
 
-        eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
-        eventSource.on(event_types.CHAT_LOADED, injectOutfitPrompt);
-        eventSource.on(event_types.CHAT_CHANGED, injectOutfitPrompt);
+        c.eventSource.on(c.event_types.MESSAGE_RECEIVED, onMessageReceived);
+        c.eventSource.on(c.event_types.CHAT_LOADED, injectOutfitPrompt);
+        c.eventSource.on(c.event_types.CHAT_CHANGED, injectOutfitPrompt);
+
+        // Восстанавливаем UI когда ST загружает настройки
+        c.eventSource.on(c.event_types.SETTINGS_LOADED, function () {
+            updateUI();
+            injectOutfitPrompt();
+        });
 
         console.log('[OutfitTracker] Ready');
     }
 
-    // ST гарантированно готов когда jQuery fires document.ready
     $(document).ready(function () {
         init();
     });
