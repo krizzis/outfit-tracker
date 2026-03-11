@@ -1,14 +1,17 @@
-// Outfit State Tracker — SillyTavern Extension v1.1
-// Совместимость: без ES module imports, использует глобальные объекты ST
+// Outfit State Tracker — SillyTavern Extension v1.2
+// Ждёт APP_READY событие ST вместо polling
 
 (function () {
     'use strict';
+
+    // Защита от повторной инициализации
+    if (window.__outfitTrackerLoaded) return;
+    window.__outfitTrackerLoaded = true;
 
     const EXT_NAME = 'outfit-tracker';
     const PROMPT_KEY = 'outfit_state_inject';
     const OUTFIT_REGEX = /\[OUTFIT_CHANGE:\s*([^\]]+)\]/i;
 
-    // Дефолтные настройки
     const defaultSettings = {
         enabled: true,
         current_outfit: '',
@@ -52,9 +55,9 @@
         updateStatusBadge();
         injectOutfitPrompt();
 
-        if (settings.debug) {
-            console.log(`[OutfitTracker] Saved: ${outfit}`);
-            if (window.toastr) window.toastr.success(`Outfit updated: ${outfit}`, 'Outfit Tracker', { timeOut: 3000 });
+        console.log(`[OutfitTracker] Outfit saved: ${outfit}`);
+        if (settings.debug && window.toastr) {
+            window.toastr.success(`Outfit updated: ${outfit}`, 'Outfit Tracker', { timeOut: 3000 });
         }
     }
 
@@ -64,12 +67,12 @@
         if (!badge) return;
         if (settings.current_outfit) {
             const short = settings.current_outfit.length > 45
-                ? settings.current_outfit.substring(0, 45) + '…'
+                ? settings.current_outfit.substring(0, 45) + '...'
                 : settings.current_outfit;
-            badge.textContent = '✓ ' + short;
+            badge.textContent = 'OK ' + short;
             badge.style.color = '#4ade80';
         } else {
-            badge.textContent = '— not set';
+            badge.textContent = '- not set';
             badge.style.color = '#94a3b8';
         }
     }
@@ -114,55 +117,45 @@
     }
 
     function renderPanel() {
-        // Не рендерить повторно если панель уже есть
         if (document.getElementById('outfit_tracker_panel')) return;
         const container = document.getElementById('extensions_settings');
         if (!container) return;
 
         const panel = document.createElement('div');
         panel.id = 'outfit_tracker_panel';
-        panel.innerHTML = `
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Outfit State Tracker</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
-                <div class="inline-drawer-content" style="padding:10px 0;">
-
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-                        <input type="checkbox" id="outfit_tracker_enabled"/>
-                        <label for="outfit_tracker_enabled" style="color:#e2e8f0;">Enabled</label>
-                    </div>
-
-                    <div style="margin-bottom:8px;">
-                        <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Current outfit:</div>
-                        <span id="outfit_tracker_badge" style="font-size:11px;"></span>
-                    </div>
-
-                    <div style="margin-bottom:8px;">
-                        <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Override / set manually:</div>
-                        <input type="text" id="outfit_tracker_current"
-                            placeholder="e.g. red dress, heels, no jacket"
-                            style="width:100%;background:#1e293b;color:#e2e8f0;border:1px solid #334155;
-                                   border-radius:4px;padding:5px 8px;font-size:12px;"/>
-                    </div>
-
-                    <div style="display:flex;gap:8px;margin-bottom:10px;">
-                        <button id="outfit_tracker_save_btn" class="menu_button">Save</button>
-                        <button id="outfit_tracker_clear_btn" class="menu_button">Clear</button>
-                    </div>
-
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <input type="checkbox" id="outfit_tracker_debug"/>
-                        <label for="outfit_tracker_debug" style="font-size:11px;color:#94a3b8;">Debug toasts</label>
-                    </div>
-
-                </div>
-            </div>`;
+        panel.innerHTML = [
+            '<div class="inline-drawer">',
+            '  <div class="inline-drawer-toggle inline-drawer-header">',
+            '    <b>Outfit State Tracker</b>',
+            '    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>',
+            '  </div>',
+            '  <div class="inline-drawer-content" style="padding:10px 0;">',
+            '    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">',
+            '      <input type="checkbox" id="outfit_tracker_enabled"/>',
+            '      <label for="outfit_tracker_enabled" style="color:#e2e8f0;">Enabled</label>',
+            '    </div>',
+            '    <div style="margin-bottom:8px;">',
+            '      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Current outfit:</div>',
+            '      <span id="outfit_tracker_badge" style="font-size:11px;"></span>',
+            '    </div>',
+            '    <div style="margin-bottom:8px;">',
+            '      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Override / set manually:</div>',
+            '      <input type="text" id="outfit_tracker_current" placeholder="e.g. red dress, heels" style="width:100%;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:5px 8px;font-size:12px;"/>',
+            '    </div>',
+            '    <div style="display:flex;gap:8px;margin-bottom:10px;">',
+            '      <button id="outfit_tracker_save_btn" class="menu_button">Save</button>',
+            '      <button id="outfit_tracker_clear_btn" class="menu_button">Clear</button>',
+            '    </div>',
+            '    <div style="display:flex;align-items:center;gap:8px;">',
+            '      <input type="checkbox" id="outfit_tracker_debug"/>',
+            '      <label for="outfit_tracker_debug" style="font-size:11px;color:#94a3b8;">Debug toasts</label>',
+            '    </div>',
+            '  </div>',
+            '</div>'
+        ].join('');
 
         container.appendChild(panel);
 
-        // События
         document.getElementById('outfit_tracker_enabled').addEventListener('change', function () {
             getSettings().enabled = this.checked;
             saveSettings();
@@ -170,12 +163,12 @@
         });
 
         document.getElementById('outfit_tracker_save_btn').addEventListener('click', function () {
-            const val = document.getElementById('outfit_tracker_current').value.trim();
+            var val = document.getElementById('outfit_tracker_current').value.trim();
             if (val) saveOutfitState(val);
         });
 
         document.getElementById('outfit_tracker_clear_btn').addEventListener('click', function () {
-            const settings = getSettings();
+            var settings = getSettings();
             settings.current_outfit = '';
             document.getElementById('outfit_tracker_current').value = '';
             saveSettings();
@@ -191,32 +184,34 @@
         updateUI();
     }
 
-    let initialized = false;
+    function attachEvents() {
+        window.eventSource.on(window.event_types.MESSAGE_RECEIVED, onMessageReceived);
+        window.eventSource.on(window.event_types.CHAT_LOADED, injectOutfitPrompt);
+        window.eventSource.on(window.event_types.CHAT_CHANGED, injectOutfitPrompt);
+        console.log('[OutfitTracker] Ready');
+    }
 
     function init() {
-        if (initialized) return;
         console.log('[OutfitTracker] Initializing...');
-
         renderPanel();
         injectOutfitPrompt();
+        attachEvents();
+    }
 
+    // Ждём пока ST полностью загрузится
+    var elapsed = 0;
+    var maxWait = 15000;
+    var interval = 500;
+
+    var timer = setInterval(function () {
+        elapsed += interval;
         if (window.eventSource && window.event_types) {
-            window.eventSource.on(window.event_types.MESSAGE_RECEIVED, onMessageReceived);
-            window.eventSource.on(window.event_types.CHAT_LOADED, injectOutfitPrompt);
-            window.eventSource.on(window.event_types.CHAT_CHANGED, injectOutfitPrompt);
-            initialized = true;
-            console.log('[OutfitTracker] Ready');
-        } else {
-            console.warn('[OutfitTracker] eventSource not available, retrying...');
-            setTimeout(init, 2000);
+            clearInterval(timer);
+            init();
+        } else if (elapsed >= maxWait) {
+            clearInterval(timer);
+            console.error('[OutfitTracker] Timeout: ST eventSource not found after 15s');
         }
-    }
-
-    // Запуск после загрузки DOM
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        setTimeout(init, 500);
-    }
+    }, interval);
 
 })();
