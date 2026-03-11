@@ -55,15 +55,53 @@
         if (settings.debug) console.log('[OutfitTracker] Injected: ' + prompt);
     }
 
-    function saveOutfitState(outfit) {
+    // Нормализация стейта одежды через LLM
+    async function normalizeOutfit(rawOutfit) {
+        try {
+            const response = await fetch('http://localhost:1234/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'local-model',
+                    max_tokens: 100,
+                    temperature: 0.1,
+                    messages: [{
+                        role: 'user',
+                        content: 'Convert the following clothing description into a comma-separated list of standard danbooru clothing tags. Output ONLY the tags, nothing else. No explanations. No sentences.\n\nRules:\n- Use standard danbooru tag names\n- If character is topless/shirtless/no top → include: topless\n- If no underwear/panties/bottomless → include: bottomless\n- If fully nude/naked → include: nude\n- List only what is currently worn or explicitly absent\n\nClothing description: ' + rawOutfit
+                    }]
+                })
+            });
+
+            const data = await response.json();
+            const normalized = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+            if (!normalized) return rawOutfit;
+
+            const clean = normalized.trim().replace(/^["']|["']$/g, '');
+            console.log('[OutfitTracker] Normalized: ' + rawOutfit + ' → ' + clean);
+            return clean;
+        } catch (e) {
+            console.warn('[OutfitTracker] Normalization failed, using raw:', e);
+            return rawOutfit;
+        }
+    }
+
+    async function saveOutfitState(outfit) {
         const settings = getSettings();
+
+        // Сначала показываем raw стейт
         settings.current_outfit = outfit;
+        updateStatusBadge();
+
+        // Нормализуем через LLM
+        const normalized = await normalizeOutfit(outfit);
+        settings.current_outfit = normalized;
         saveSettings();
         updateStatusBadge();
         injectOutfitPrompt();
-        console.log('[OutfitTracker] Outfit saved: ' + outfit);
+
+        console.log('[OutfitTracker] Outfit saved: ' + normalized);
         if (settings.debug && window.toastr) {
-            window.toastr.success('Outfit updated: ' + outfit, 'Outfit Tracker', { timeOut: 3000 });
+            window.toastr.success('Outfit: ' + normalized, 'Outfit Tracker', { timeOut: 4000 });
         }
     }
 
@@ -207,24 +245,35 @@
     }
 
     // Перехват SD промпта и добавление nudity тегов
-    function onSdPromptProcessing(promptObject) {
+    function onSdPromptProcessing(workflow) {
         const settings = getSettings();
         if (!settings.enabled || !settings.current_outfit) return;
 
         const nudityTags = getNudityTags(settings.current_outfit);
         if (nudityTags.length === 0) return;
 
-        // promptObject.prompt — строка с тегами
-        if (typeof promptObject.prompt !== 'string') return;
+        // Промпт находится в workflow.prompt — объект с нодами ComfyUI
+        const prompt = workflow && workflow.prompt;
+        if (!prompt || typeof prompt !== 'object') return;
 
-        const existing = promptObject.prompt.toLowerCase();
-        const toAdd = nudityTags.filter(tag => !existing.includes(tag));
-        if (toAdd.length === 0) return;
+        // Ищем позитивный CLIPTextEncode (node "6" — первый из двух)
+        for (const key of Object.keys(prompt)) {
+            const node = prompt[key];
+            if (node.class_type === 'CLIPTextEncode' && node.inputs && typeof node.inputs.text === 'string') {
+                const existing = node.inputs.text.toLowerCase();
+                const toAdd = nudityTags.filter(tag => !existing.includes(tag));
+                if (toAdd.length === 0) continue;
 
-        promptObject.prompt = promptObject.prompt + ', ' + toAdd.join(', ');
+                // Добавляем только в позитивный промпт (не в негативный)
+                // Негативный обычно содержит "worst quality" или похожее
+                if (existing.includes('worst quality') || existing.includes('bad anatomy')) continue;
 
-        if (settings.debug) {
-            console.log('[OutfitTracker] Added nudity tags: ' + toAdd.join(', '));
+                node.inputs.text = node.inputs.text + ', ' + toAdd.join(', ');
+
+                if (settings.debug) {
+                    console.log('[OutfitTracker] Added to node ' + key + ': ' + toAdd.join(', '));
+                }
+            }
         }
     }
 
